@@ -38,7 +38,8 @@ Important
 The existing benchmark is intentionally NOT changed. This experiment creates
 new output files under models/two_stage/.
 """
-
+import psycopg2
+import pandas as pd
 from pathlib import Path
 
 import numpy as np
@@ -212,6 +213,7 @@ def main():
     all_metrics = []
     all_predictions = []
     qualifying_metrics = []
+    last_qualifying_predictions = None
 
     for fold in FOLDS:
         train_end = fold["train_end"]
@@ -251,6 +253,35 @@ def main():
             test_eval,
             "predicted_qualifying_raw",
             "predicted_qualifying_position",
+        )
+        if test_year == 2026:
+            last_qualifying_predictions = test_eval.copy()
+        # ================================================================
+        # PRINT STAGE 1 QUALIFYING PREDICTIONS
+        # ================================================================
+        print("\n" + "=" * 70)
+        print(f"QUALIFYING PREDICTIONS — TEST YEAR {test_year}")
+        print("=" * 70)
+
+        qualifying_output = test_eval[
+            [
+                "raceId",
+                "driverId",
+                TARGET_QUAL,
+                "predicted_qualifying_raw",
+                "predicted_qualifying_position",
+            ]
+        ].copy()
+
+        qualifying_output["error"] = (
+            qualifying_output["predicted_qualifying_position"]
+            - qualifying_output[TARGET_QUAL]
+        )
+
+        print(
+            qualifying_output
+            .sort_values(["raceId", "predicted_qualifying_position"])
+            .to_string(index=False)
         )
 
         q_mae, q_rmse, q_spearman, q_kendall = evaluate(
@@ -441,6 +472,38 @@ def main():
     print("FINAL COMPARISON — AVERAGE WALK-FORWARD PERFORMANCE")
     print("=" * 78)
     print(summary.to_string(index=False))
+
+    # ================================================================
+    # PRINT ONE RACE'S PREDICTED QUALIFYING ORDER
+    # ================================================================
+
+    race_id = 1184
+
+    qualifying_output = (
+        last_qualifying_predictions[
+            last_qualifying_predictions["raceId"] == race_id
+        ]
+        .sort_values("predicted_qualifying_position")
+    )
+
+    print("\n" + "=" * 70)
+    print(f"PREDICTED QUALIFYING ORDER — RACE {race_id}")
+    print("=" * 70)
+
+    for _, row in qualifying_output.iterrows():
+        pos = int(row["predicted_qualifying_position"])
+        driver_id = row["driverId"]
+
+        if pos == 1:
+            prefix = "🏆 P1"
+        elif pos == 2:
+            prefix = "🥈 P2"
+        elif pos == 3:
+            prefix = "🥉 P3"
+        else:
+            prefix = f"   P{pos}"
+
+        print(f"{prefix}  Driver ID {driver_id}")
 
     print("\nFiles saved:")
     print(f"  {metrics_path}")
